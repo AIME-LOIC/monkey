@@ -1,23 +1,13 @@
 'use strict';
 
-// ─── Unicode-safe base64 helpers ────────────────────────────────────────────
-// Use these on the CALLER side to produce endpointsJsonB64:
-//   import { encodePayload } from './ui.js';
-//   const endpointsJsonB64 = encodePayload(endpointsData);
-//
+// ─── Unicode-safe base64 helpers ─────────────────────────────────────────────
 function encodePayload(obj) {
   const jsonStr = JSON.stringify(obj);
-  // Convert string to UTF-8 bytes
   const bytes = new TextEncoder().encode(jsonStr);
-  // Convert bytes to binary string for btoa
   const binStr = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
   return btoa(binStr);
 }
 
-// The reciprocal decode runs inside each HTML template (see _decode below).
-// It is injected as a one-liner so every template is self-contained.
-
-// Replace line 18 with this version:
 const _decode = `function _decode(b64) {
   const binStr = atob(b64.replace(/\\s+/g, ''));
   const bytes = new Uint8Array(binStr.length);
@@ -27,22 +17,20 @@ const _decode = `function _decode(b64) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }`;
 
-// ─── Runtime sandbox (injected into tester page) ─────────────────────────────
+// ─── Runtime sandbox (injected into tester page) ──────────────────────────────
 function runtimeClientSandbox() {
-  // Unicode-safe decode (whitespace-stripped for safety)
   function _decode(b64) {
-  const binStr = atob(b64.replace(/\s+/g, ''));
-  const bytes = new Uint8Array(binStr.length);
-  for (let i = 0; i < binStr.length; i++) {
-    bytes[i] = binStr.charCodeAt(i);
+    const binStr = atob(b64.replace(/\s+/g, ''));
+    const bytes = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) {
+      bytes[i] = binStr.charCodeAt(i);
+    }
+    return JSON.parse(new TextDecoder().decode(bytes));
   }
-  const jsonStr = new TextDecoder().decode(bytes);
-  return JSON.parse(jsonStr);
-}
 
   const ENDPOINTS = _decode(
-  document.getElementById('__monkey_data__').textContent.trim()
-);
+    document.getElementById('__monkey_data__').textContent.trim()
+  );
 
   let currentKey = null;
 
@@ -218,10 +206,11 @@ function runtimeClientSandbox() {
 const UI = {
 
   // ── Tester sandbox ──────────────────────────────────────────────────────────
-  tester: (endpointsJsonB64) => `<!DOCTYPE html>
+  // appName: displayed in the header logo
+  tester: (endpointsJsonB64, appName = 'App') => `<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><title>Endtester — Environment Hub</title>
+<meta charset="UTF-8"><title>${appName} — API Tester</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#0e0c09; --surface:#181510; --surface2:#221d14; --border:#3a3020; --accent:#e8a838; --text:#f0e8d8; --text-dim:#9a8c78; --red:#d45c3c; --green:#6ba05a; --blue:#5a86c0; --radius:8px; }
@@ -250,7 +239,7 @@ const UI = {
   .form-section-title { font-size:11px; font-family:'DM Mono',monospace; color:var(--text-dim); text-transform:uppercase; margin-bottom:16px; border-bottom:1px solid var(--border); padding-bottom:6px; }
   .field-row { display:grid; grid-template-columns:150px 1fr; align-items:center; gap:16px; margin-bottom:14px; }
   .field-label { font-family:'DM Mono',monospace; font-size:12px; color:var(--text-dim); text-align:right; }
-  input[type=text],input[type=password],input[type=number] { background:var(--surface2); border:1px solid var(--border); color:var(--text); font-size:13px; padding:8px 12px; border-radius:var(--radius); width:100%; outline:none; }
+  input[type=text],input[type=password],input[type=number],input[type=email],input[type=date],input[type=tel],input[type=url] { background:var(--surface2); border:1px solid var(--border); color:var(--text); font-size:13px; padding:8px 12px; border-radius:var(--radius); width:100%; outline:none; }
   .btn-row { margin-top:24px; display:flex; gap:12px; }
   .btn { background:var(--accent); color:#0e0c09; border:none; padding:10px 24px; border-radius:var(--radius); font-size:13px; font-weight:500; cursor:pointer; }
   .btn-secondary { background:var(--surface2); color:var(--text-dim); border:1px solid var(--border); }
@@ -268,10 +257,9 @@ const UI = {
 </style>
 </head>
 <body>
-<!-- Replace the old hidden div with this -->
 <script id="__monkey_data__" type="text/plain">${endpointsJsonB64}</script>
 <header>
-  <div class="logo">🐒 Endtester <span>Interactive API Hub</span></div>
+  <div class="logo">${appName} <span>API Tester</span></div>
   <div class="header-right">
     <div class="base-url-wrap"><label>HOST</label><input id="base-url" type="text" value=""></div>
     <div class="jwt-wrap"><label>BEARER AUTH</label><input id="jwt-input" type="text" placeholder="Token value..."></div>
@@ -291,19 +279,24 @@ const UI = {
 </html>`,
 
   // ── Login page ──────────────────────────────────────────────────────────────
-  login: () => `<!DOCTYPE html>
+  // appName: shown as the page title and card heading
+  // loginPath: the API endpoint to POST credentials to (default: /api/v1/auth/login)
+  // redirectTo: where to send the user after a successful login (default: /dashboard)
+  login: (appName = 'App', loginPath = '/api/v1/auth/login', redirectTo = '/dashboard') => `<!DOCTYPE html>
 <html>
 <head>
-<title>Sign In</title>
+<title>${appName} — Sign In</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   body { background:#0e0c09; color:#f0e8d8; font-family:'DM Sans',sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; }
   .card { background:#181510; border:1px solid #3a3020; padding:40px; border-radius:12px; width:340px; }
-  h2 { color:#e8a838; margin:0 0 24px; text-align:center; }
+  h2 { color:#e8a838; margin:0 0 8px; text-align:center; }
+  .subtitle { color:#9a8c78; font-size:13px; text-align:center; margin:0 0 28px; }
   .field { margin-bottom:20px; }
   label { display:block; font-size:11px; color:#9a8c78; text-transform:uppercase; margin-bottom:8px; }
-  input { background:#221d14; border:1px solid #3a3020; color:#f0e8d8; padding:12px; width:100%; box-sizing:border-box; border-radius:6px; outline:none; }
-  button { background:#e8a838; color:#0e0c09; border:none; padding:12px; width:100%; border-radius:6px; font-weight:600; cursor:pointer; margin-top:10px; }
+  input { background:#221d14; border:1px solid #3a3020; color:#f0e8d8; padding:12px; width:100%; box-sizing:border-box; border-radius:6px; outline:none; font-size:14px; }
+  input::placeholder { color:#5a5040; }
+  button { background:#e8a838; color:#0e0c09; border:none; padding:12px; width:100%; border-radius:6px; font-weight:600; cursor:pointer; margin-top:10px; font-size:14px; }
   .footer { text-align:center; margin-top:20px; font-size:13px; color:#9a8c78; }
   a { color:#e8a838; text-decoration:none; }
   #err { color:#d45c3c; font-size:13px; margin-bottom:15px; text-align:center; min-height:18px; }
@@ -311,48 +304,61 @@ const UI = {
 </head>
 <body>
 <div class="card">
-  <h2>Sign In</h2>
+  <h2>${appName}</h2>
+  <p class="subtitle">Sign in to your account</p>
   <div id="err"></div>
-  <div class="field"><label>Email</label><input type="email" id="email" value="admin@bakery.com"></div>
-  <div class="field"><label>Password</label><input type="password" id="password" value="password123"></div>
-  <button onclick="handleLogin()">Log In</button>
+  <div class="field"><label>Email</label><input type="email" id="email" placeholder="you@example.com" autocomplete="email"></div>
+  <div class="field"><label>Password</label><input type="password" id="password" placeholder="Your password" autocomplete="current-password"></div>
+  <button onclick="handleLogin()">Sign In</button>
   <div class="footer">Need an account? <a href="/signup">Sign up</a></div>
 </div>
 <script>
 async function handleLogin() {
-  const email    = document.getElementById('email').value;
+  const email    = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
-  const res  = await fetch('/api/v1/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
-  });
-  const data = await res.json();
-  if (res.ok && data.token) {
-    localStorage.setItem('__auth_token__', data.token);
-    window.location.href = '/dashboard';
-  } else {
-    document.getElementById('err').textContent = data.error || 'Login failed';
+  const errDiv   = document.getElementById('err');
+  errDiv.textContent = '';
+  if (!email || !password) { errDiv.textContent = 'Please fill in all fields.'; return; }
+  try {
+    const res  = await fetch('${loginPath}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if (res.ok && data.token) {
+      localStorage.setItem('__auth_token__', data.token);
+      window.location.href = '${redirectTo}';
+    } else {
+      errDiv.textContent = data.error || data.message || 'Login failed.';
+    }
+  } catch (e) {
+    errDiv.textContent = 'Network error — could not reach the server.';
   }
 }
+document.addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
 </script>
 </body>
 </html>`,
 
   // ── Signup page ─────────────────────────────────────────────────────────────
-  signup: () => `<!DOCTYPE html>
+  // appName: shown as the page title and card heading
+  // registerPath: the API endpoint to POST to (default: /api/v1/auth/register)
+  signup: (appName = 'App', registerPath = '/api/v1/auth/register') => `<!DOCTYPE html>
 <html>
 <head>
-<title>Create Account</title>
+<title>${appName} — Create Account</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   body { background:#0e0c09; color:#f0e8d8; font-family:'DM Sans',sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; }
   .card { background:#181510; border:1px solid #3a3020; padding:40px; border-radius:12px; width:340px; }
-  h2 { color:#e8a838; margin:0 0 24px; text-align:center; }
+  h2 { color:#e8a838; margin:0 0 8px; text-align:center; }
+  .subtitle { color:#9a8c78; font-size:13px; text-align:center; margin:0 0 28px; }
   .field { margin-bottom:20px; }
   label { display:block; font-size:11px; color:#9a8c78; text-transform:uppercase; margin-bottom:8px; }
-  input { background:#221d14; border:1px solid #3a3020; color:#f0e8d8; padding:12px; width:100%; box-sizing:border-box; border-radius:6px; outline:none; }
-  button { background:#e8a838; color:#0e0c09; border:none; padding:12px; width:100%; border-radius:6px; font-weight:600; cursor:pointer; margin-top:10px; }
+  input { background:#221d14; border:1px solid #3a3020; color:#f0e8d8; padding:12px; width:100%; box-sizing:border-box; border-radius:6px; outline:none; font-size:14px; }
+  input::placeholder { color:#5a5040; }
+  button { background:#e8a838; color:#0e0c09; border:none; padding:12px; width:100%; border-radius:6px; font-weight:600; cursor:pointer; margin-top:10px; font-size:14px; }
   .footer { text-align:center; margin-top:20px; font-size:13px; color:#9a8c78; }
   a { color:#e8a838; text-decoration:none; }
   #msg { font-size:13px; margin-bottom:15px; text-align:center; min-height:18px; }
@@ -360,44 +366,55 @@ async function handleLogin() {
 </head>
 <body>
 <div class="card">
-  <h2>Sign Up</h2>
+  <h2>${appName}</h2>
+  <p class="subtitle">Create your account</p>
   <div id="msg"></div>
-  <div class="field"><label>Username</label><input type="text" id="username" placeholder="Username"></div>
-  <div class="field"><label>Email Address</label><input type="email" id="email" placeholder="Email"></div>
-  <div class="field"><label>Password</label><input type="password" id="password"></div>
-  <button onclick="handleRegister()">Register Account</button>
-  <div class="footer">Have an account? <a href="/login">Sign In</a></div>
+  <div class="field"><label>Username</label><input type="text" id="username" placeholder="Choose a username" autocomplete="username"></div>
+  <div class="field"><label>Email Address</label><input type="email" id="email" placeholder="you@example.com" autocomplete="email"></div>
+  <div class="field"><label>Password</label><input type="password" id="password" placeholder="Choose a password" autocomplete="new-password"></div>
+  <button onclick="handleRegister()">Create Account</button>
+  <div class="footer">Have an account? <a href="/login">Sign in</a></div>
 </div>
 <script>
 async function handleRegister() {
-  const username = document.getElementById('username').value;
-  const email    = document.getElementById('email').value;
+  const username = document.getElementById('username').value.trim();
+  const email    = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
   const msgDiv   = document.getElementById('msg');
-  const res  = await fetch('/api/v1/auth/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, email, password })
-  });
-  const data = await res.json();
-  if (res.ok) {
-    msgDiv.style.color = '#6ba05a';
-    msgDiv.textContent = 'Registration complete! Redirecting…';
-    setTimeout(() => window.location.href = '/login', 1200);
-  } else {
+  msgDiv.textContent = '';
+  if (!username || !email || !password) { msgDiv.style.color = '#d45c3c'; msgDiv.textContent = 'Please fill in all fields.'; return; }
+  try {
+    const res  = await fetch('${registerPath}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      msgDiv.style.color = '#6ba05a';
+      msgDiv.textContent = 'Account created! Redirecting to login…';
+      setTimeout(() => window.location.href = '/login', 1200);
+    } else {
+      msgDiv.style.color = '#d45c3c';
+      msgDiv.textContent = data.error || data.message || 'Registration failed.';
+    }
+  } catch (e) {
     msgDiv.style.color = '#d45c3c';
-    msgDiv.textContent = data.error || 'Registration failed';
+    msgDiv.textContent = 'Network error — could not reach the server.';
   }
 }
+document.addEventListener('keydown', e => { if (e.key === 'Enter') handleRegister(); });
 </script>
 </body>
 </html>`,
 
   // ── Dashboard ────────────────────────────────────────────────────────────────
-  dashboard: (endpointsJsonB64) => `<!DOCTYPE html>
+  // endpointsJsonB64: base64-encoded endpoints payload from encodePayload()
+  // appName: shown in the page title and header h1
+  dashboard: (endpointsJsonB64, appName = 'App') => `<!DOCTYPE html>
 <html>
 <head>
-<title>Dynamic Admin Dashboard</title>
+<title>${appName} — Admin Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#0e0c09; --surface:#181510; --surface2:#221d14; --border:#3a3020; --accent:#e8a838; --text:#f0e8d8; --text-dim:#9a8c78; --red:#d45c3c; --green:#6ba05a; }
@@ -429,19 +446,18 @@ async function handleRegister() {
 </style>
 </head>
 <body>
-<!-- Replace the old hidden div with this -->
 <script id="__monkey_data__" type="text/plain">${endpointsJsonB64}</script>
 
 <header>
-  <h1>Universal Management Dashboard</h1>
+  <h1>${appName}</h1>
   <div class="nav-links">
-    <a href="/api/tester" target="_blank">🛠 Open Tester Sandbox</a>
+    <a href="/api/tester" target="_blank">🛠 API Tester</a>
     <button class="logout-btn" onclick="localStorage.removeItem('__auth_token__'); window.location.href='/login'">Log Out</button>
   </div>
 </header>
 
 <div class="selector-banner">
-  <label style="margin:0;">Target Data Resource Collection:</label>
+  <label style="margin:0;">Resource collection:</label>
   <select id="route-selector" onchange="switchCollection()"></select>
 </div>
 
@@ -449,8 +465,8 @@ async function handleRegister() {
   <div class="panel">
     <h3 id="form-title">Add Entry</h3>
     <div id="dynamic-fields-container"></div>
-    <button class="btn" id="btn-submit" onclick="submitDataForm()">Execute Submission</button>
-    <button class="btn btn-sm btn-cancel" id="btn-cancel" style="display:none; margin-top:10px;" onclick="resetDataForm()">Cancel Action</button>
+    <button class="btn" id="btn-submit" onclick="submitDataForm()">Submit</button>
+    <button class="btn btn-sm btn-cancel" id="btn-cancel" style="display:none; margin-top:10px;" onclick="resetDataForm()">Cancel</button>
   </div>
   <div class="table-wrap">
     <table id="dynamic-table">
@@ -461,22 +477,14 @@ async function handleRegister() {
 </div>
 
 <script>
-// ── Unicode-safe decode ──────────────────────────────────────────────────────
-// Replace the old _decode function inside UI.dashboard with this:
 function _decode(b64) {
   const binStr = atob(b64.replace(/\s+/g, ''));
   const bytes = new Uint8Array(binStr.length);
-  for (let i = 0; i < binStr.length; i++) {
-    bytes[i] = binStr.charCodeAt(i);
-  }
+  for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-// BEFORE (Broken)
-// AFTER (Safe from HTML parsing artifacts)
-const ENDPOINTS = _decode(
-  document.getElementById('__monkey_data__').textContent.trim()
-);
+const ENDPOINTS = _decode(document.getElementById('__monkey_data__').textContent.trim());
 
 const token = localStorage.getItem('__auth_token__');
 if (!token) window.location.href = '/login';
@@ -511,7 +519,9 @@ function resolveRoutes() {
     if (dynamicCollections[path].get) {
       const opt = document.createElement('option');
       opt.value = path;
-      opt.textContent = path + ' (Dynamic Dataset)';
+      // Derive a readable label from the path: /api/v1/students → Students
+      const label = path.split('/').filter(Boolean).pop();
+      opt.textContent = label.charAt(0).toUpperCase() + label.slice(1);
       selector.appendChild(opt);
     }
   });
@@ -533,7 +543,7 @@ function renderFormFields() {
   const fields = dynamicCollections[activeCollectionPath].modelFields;
 
   if (!fields || fields.length === 0) {
-    container.innerHTML = '<p style="font-size:12px;color:var(--text-dim);">No input properties found.</p>';
+    container.innerHTML = '<p style="font-size:12px;color:var(--text-dim);">No writable fields detected for this endpoint.</p>';
     return;
   }
 
@@ -551,7 +561,7 @@ async function fetchData() {
   const head = document.getElementById('table-head');
   const body = document.getElementById('table-body');
   head.innerHTML = '';
-  body.innerHTML = '<tr><td style="padding:20px;color:var(--text-dim)">Loading layout schemas…</td></tr>';
+  body.innerHTML = '<tr><td style="padding:20px;color:var(--text-dim)">Loading…</td></tr>';
 
   try {
     const res     = await fetch(activeCollectionPath, { headers: { 'Authorization': 'Bearer ' + token } });
@@ -566,7 +576,7 @@ async function fetchData() {
     }
 
     if (!list || list.length === 0 || list[0] === null) {
-      body.innerHTML = '<tr><td style="padding:30px;color:var(--text-dim)">No records found inside this live API container.</td></tr>';
+      body.innerHTML = '<tr><td style="padding:30px;color:var(--text-dim)">No records found.</td></tr>';
       return;
     }
 
@@ -592,7 +602,7 @@ async function fetchData() {
     });
 
   } catch (e) {
-    body.innerHTML = '<tr><td style="padding:20px;color:var(--red)">Failed processing remote endpoint structure data.</td></tr>';
+    body.innerHTML = '<tr><td style="padding:20px;color:var(--red)">Failed to load data from this endpoint.</td></tr>';
     console.error(e);
   }
 }
@@ -622,24 +632,23 @@ async function submitDataForm() {
   });
 
   if (res.ok) { resetDataForm(); fetchData(); }
-  else { alert('Submission declined.'); }
+  else { alert('Request failed — check the console for details.'); }
 }
 
 async function deleteRow(id) {
-  if (!confirm('Execute atomic entry removal?')) return;
+  if (!confirm('Delete this record?')) return;
   const delTemplate = dynamicCollections[activeCollectionPath].del;
   const paramName   = delTemplate.split('/:')[1];
   const url         = delTemplate.replace(\`:\${paramName}\`, id);
   const res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
-  if (res.ok) fetchData(); else alert('Delete request blocked.');
+  if (res.ok) fetchData(); else alert('Delete failed.');
 }
 
 function startRowEdit(id, encodedJson) {
   activeEditId = id;
-  // Unicode-safe decode for row data encoded above with btoa(unescape(encodeURIComponent(...)))
   const data = JSON.parse(decodeURIComponent(escape(atob(encodedJson))));
-  document.getElementById('form-title').textContent  = \`Update Row #\${id}\`;
-  document.getElementById('btn-submit').textContent   = 'Commit Changes';
+  document.getElementById('form-title').textContent  = \`Edit record #\${id}\`;
+  document.getElementById('btn-submit').textContent   = 'Save Changes';
   document.getElementById('btn-cancel').style.display = 'block';
   const fields = dynamicCollections[activeCollectionPath].modelFields;
   fields.forEach(f => {
@@ -651,7 +660,7 @@ function startRowEdit(id, encodedJson) {
 function resetDataForm() {
   activeEditId = null;
   document.getElementById('form-title').textContent   = 'Add Entry';
-  document.getElementById('btn-submit').textContent    = 'Execute Submission';
+  document.getElementById('btn-submit').textContent    = 'Submit';
   document.getElementById('btn-cancel').style.display  = 'none';
   (dynamicCollections[activeCollectionPath]?.modelFields || []).forEach(f => {
     const el = document.getElementById(\`input-\${f.name}\`);
