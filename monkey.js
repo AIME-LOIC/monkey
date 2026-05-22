@@ -1,6 +1,6 @@
 'use strict';
 
-const { getHtmlTemplate } = require('./htmlTemplate');
+import { getHtmlTemplate } from './htmlTemplate.js';
 
 function inferType(name) {
   const n = name.toLowerCase();
@@ -101,21 +101,25 @@ function parseStack(stack, detectedEndpoints, prefix = '') {
         }
 
         let bodyFields = [];
-        if (['POST', 'PUT', 'PATCH'].includes(httpMethod)) {
-          const handlers = (layer.route.stack || []).map(sl => sl.handle).filter(Boolean);
-          for (const handler of handlers) {
-            bodyFields.push(...extractBodyFields(handler));
-          }
-          const seen = new Map();
-          bodyFields = bodyFields.filter(f => {
-            if (seen.has(f.name)) return false;
-            seen.set(f.name, true);
-            return true;
-          });
-          if (bodyFields.length === 0) {
-            bodyFields = fallbackFields(fullPath);
-          }
-        }
+        // Inside your parseStack function in monkey.js, update this block:
+if (['POST', 'PUT', 'PATCH'].includes(httpMethod)) {
+  const handlers = (layer.route.stack || []).map(sl => sl.handle).filter(Boolean);
+  for (const handler of handlers) {
+    bodyFields.push(...extractBodyFields(handler));
+  }
+  
+  const seen = new Map();
+  bodyFields = bodyFields.filter(f => {
+    if (seen.has(f.name)) return false;
+    seen.set(f.name, true);
+    return true;
+  });
+
+  // CHANGE THIS: Only apply generic fallbacks if there are no explicit path parameters
+  if (bodyFields.length === 0 && pathParams.length === 0) {
+    bodyFields = fallbackFields(fullPath);
+  }
+}
 
         detectedEndpoints[key] = {
           method: httpMethod,
@@ -133,7 +137,11 @@ function parseStack(stack, detectedEndpoints, prefix = '') {
   }
 }
 
-function endtesterExpress() {
+// function endtesterExpress() { ... }
+
+
+// Change it to this instead:
+export function endtesterExpress() {
   return function monkeyTesterMiddleware(req, res, next) {
     if (req.path !== '/api/tester' && req.path !== '/api/tester/') {
       return next();
@@ -142,13 +150,17 @@ function endtesterExpress() {
     const app = req.app;
     const detectedEndpoints = {};
 
-    const rootStack = (app._router && app._router.stack) || (app.router && app.router.stack) || [];
+    const rootStack =
+      (app._router && app._router.stack) ||
+      (app.router  && app.router.stack)  ||
+      [];
+
     parseStack(rootStack, detectedEndpoints);
 
     const html = getHtmlTemplate(detectedEndpoints);
-    res.setHeader('Content-Type', 'text/html; charset=utf-8'); // Forces browser to parse UTF-8 encoding safely
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(html);
   };
 }
 
-module.exports = { endtesterExpress };
+// export { endtesterExpress };
