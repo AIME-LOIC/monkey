@@ -2,7 +2,6 @@
 
 import { getHtmlTemplate } from './htmlTemplate.js';
 
-// ─── Field type inference ─────────────────────────────────────────────────────
 function inferType(name) {
   const n = name.toLowerCase();
   if (n.includes('email'))                                          return 'email';
@@ -28,15 +27,12 @@ function buildField(name) {
   };
 }
 
-// ─── Extract req.body fields from handler source ──────────────────────────────
 function extractBodyFields(handler) {
   try {
     const source = handler.toString();
     if (!source || source.includes('[native code]')) return [];
 
     const seen = new Map();
-
-    // Pattern 1 — destructuring: const { email, password } = req.body
     const destructRe = /(?:const|let|var)\s*\{\s*([^}]+)\s*\}\s*=\s*req\.body/g;
     let m;
     while ((m = destructRe.exec(source)) !== null) {
@@ -48,7 +44,6 @@ function extractBodyFields(handler) {
       });
     }
 
-    // Pattern 2 — property access: req.body.email  /  req.body['email']
     const accessRe = /req\.body\.([a-zA-Z_$][a-zA-Z0-9_$]*)|req\.body\[['"]([a-zA-Z_$][a-zA-Z0-9_$]*)['"]]/g;
     while ((m = accessRe.exec(source)) !== null) {
       const name = m[1] || m[2];
@@ -61,67 +56,35 @@ function extractBodyFields(handler) {
   }
 }
 
-// ─── Path-based fallback fields ───────────────────────────────────────────────
 function fallbackFields(path) {
   const p = path.toLowerCase();
-
-  if (p.includes('login') || p.includes('signin') || p.includes('auth/login')) {
-    return ['email', 'password'].map(buildField);
-  }
-  if (p.includes('register') || p.includes('signup') || p.includes('auth/register')) {
-    return ['username', 'email', 'password'].map(buildField);
-  }
-  if (p.includes('user')) {
-    return ['username', 'email', 'password'].map(buildField);
-  }
-  if (p.includes('product')) {
-    return ['name', 'price', 'stock'].map(buildField);
-  }
-  if (p.includes('order')) {
-    return ['productId', 'quantity', 'address'].map(buildField);
-  }
+  if (p.includes('login') || p.includes('signin') || p.includes('auth/login')) return ['email', 'password'].map(buildField);
+  if (p.includes('register') || p.includes('signup') || p.includes('auth/register')) return ['username', 'email', 'password'].map(buildField);
+  if (p.includes('user')) return ['username', 'email', 'password'].map(buildField);
+  if (p.includes('product')) return ['name', 'price', 'stock'].map(buildField);
+  if (p.includes('order')) return ['productId', 'quantity', 'address'].map(buildField);
   return [];
 }
 
-// ─── Extract router prefix safely from Express layer ─────────────────────────
 function extractRouterPrefix(layer) {
-  // Prefer explicit path if available
-  if (layer.path && typeof layer.path === 'string') {
-    return layer.path === '/' ? '' : layer.path;
-  }
-
   if (!layer.regexp) return '';
-
-  // Convert the regexp back to a path prefix by looking at the regexp source
-  // Express generates regexps like: /^\/api\/v1\/?(?=\/|$)/i
   const src = layer.regexp.source;
-
-  // Extract the literal path segment before any optional/lookahead parts
-  // Match from start: ^\/ then literal segments
-  const match = src.match(/^\^((?:\\\/[^\\(?[*+{}|$^]+)+)/);
-  if (!match) return '';
-
-  // Unescape the extracted path
-  const raw = match[1].replace(/\\\//g, '/');
-
-  // Remove trailing slash if present
-  return raw.replace(/\/$/, '') || '';
+  const patterns = [/^\^\\\/([^\\?$]+)/, /^\^\\\/([a-zA-Z0-9_/-]+)/];
+  for (const re of patterns) {
+    const m = re.exec(src);
+    if (m && m[1]) return '/' + m[1].replace(/\\\//g, '/').replace(/\\/g, '');
+  }
+  return '';
 }
 
-// ─── Walk the Express router stack recursively ────────────────────────────────
 function parseStack(stack, detectedEndpoints, prefix = '') {
   if (!Array.isArray(stack)) return;
 
   for (const layer of stack) {
-    // ── Named route (app.get / app.post …) ──────────────────────────────────
     if (layer.route) {
-      const rawPath = typeof layer.route.path === 'string'
-        ? layer.route.path
-        : (layer.route.path ? String(layer.route.path) : '');
-
+      const rawPath = typeof layer.route.path === 'string' ? layer.route.path : (layer.route.path ? String(layer.route.path) : '');
       const fullPath = (prefix + rawPath).replace(/\/+/g, '/') || '/';
 
-      // Skip the tester route itself
       if (fullPath.startsWith('/api/tester')) continue;
 
       const methods = Object.keys(layer.route.methods || {});
@@ -130,76 +93,66 @@ function parseStack(stack, detectedEndpoints, prefix = '') {
         const httpMethod = method.toUpperCase();
         const key = `${httpMethod}::${fullPath}`;
 
-        // ── Path params (:id, :slug …) ────────────────────────────────────
         const pathParams = [];
         const paramRe = /:([a-zA-Z_$][a-zA-Z0-9_$]*)/g;
-        const matches = [...fullPath.matchAll(paramRe)];
-
-        for (const pm of matches) {
-          pathParams.push({
-            name: pm[1],
-            label: pm[1].charAt(0).toUpperCase() + pm[1].slice(1),
-            placeholder: 'value'
-          });
+        let pm;
+        while ((pm = paramRe.exec(fullPath)) !== null) {
+          pathParams.push({ name: pm[1], label: pm[1].charAt(0).toUpperCase() + pm[1].slice(1), placeholder: 'value' });
         }
 
-        // ── Body fields ──────────────────────────────────────────────────
         let bodyFields = [];
-        if (['POST', 'PUT', 'PATCH'].includes(httpMethod)) {
-          const handlers = (layer.route.stack || []).map(sl => sl.handle).filter(Boolean);
-          for (const handler of handlers) {
-            bodyFields.push(...extractBodyFields(handler));
-          }
-          // Deduplicate
-          const seen = new Map();
-          bodyFields = bodyFields.filter(f => {
-            if (seen.has(f.name)) return false;
-            seen.set(f.name, true);
-            return true;
-          });
-          if (bodyFields.length === 0) {
-            bodyFields = fallbackFields(fullPath);
-          }
-        }
+        // Inside your parseStack function in monkey.js, update this block:
+if (['POST', 'PUT', 'PATCH'].includes(httpMethod)) {
+  const handlers = (layer.route.stack || []).map(sl => sl.handle).filter(Boolean);
+  for (const handler of handlers) {
+    bodyFields.push(...extractBodyFields(handler));
+  }
+  
+  const seen = new Map();
+  bodyFields = bodyFields.filter(f => {
+    if (seen.has(f.name)) return false;
+    seen.set(f.name, true);
+    return true;
+  });
+
+  // CHANGE THIS: Only apply generic fallbacks if there are no explicit path parameters
+  if (bodyFields.length === 0 && pathParams.length === 0) {
+    bodyFields = fallbackFields(fullPath);
+  }
+}
 
         detectedEndpoints[key] = {
-          method:  httpMethod,
-          path:    fullPath,
-          title:   `${httpMethod} ${fullPath}`,
-          desc:    `Auto-discovered endpoint — ${fullPath}`,
-          params:  pathParams,
-          fields:  bodyFields,
+          method: httpMethod,
+          path: fullPath,
+          title: `${httpMethod} ${fullPath}`,
+          desc: `Auto-discovered endpoint - ${fullPath}`, // Safe ASCII character
+          params: pathParams,
+          fields: bodyFields,
         };
       }
-    }
-
-    // ── Nested router (app.use('/prefix', router)) ───────────────────────────
-    else if (layer.handle && typeof layer.handle === 'function' && layer.handle.stack) {
+    } else if (layer.name === 'router' && layer.handle && layer.handle.stack) {
       const routerPrefix = extractRouterPrefix(layer);
       parseStack(layer.handle.stack, detectedEndpoints, prefix + routerPrefix);
     }
   }
 }
 
-// ─── Middleware ───────────────────────────────────────────────────────────────
-function endtesterExpress() {
-  return function monkeyTesterMiddleware(req, res, next) {
-    // Normalize path: strip trailing slash, handle both req.path and req.url
-    const rawPath = (req.path || req.url || '').split('?')[0].replace(/\/+$/, '');
+// function endtesterExpress() { ... }
 
-    if (rawPath !== '/api/tester') {
+
+// Change it to this instead:
+export function endtesterExpress() {
+  return function monkeyTesterMiddleware(req, res, next) {
+    if (req.path !== '/api/tester' && req.path !== '/api/tester/') {
       return next();
     }
 
     const app = req.app;
-
-    // Wait a tick to ensure all routes are registered before scanning
-    // (handles edge cases where middleware is mounted before some routes)
     const detectedEndpoints = {};
 
     const rootStack =
-      (app._router && app._router.stack) ||   // Express 4
-      (app.router  && app.router.stack)  ||   // Express 5
+      (app._router && app._router.stack) ||
+      (app.router  && app.router.stack)  ||
       [];
 
     parseStack(rootStack, detectedEndpoints);
