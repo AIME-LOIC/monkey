@@ -1,6 +1,6 @@
 {
   "name": "@aimeloic/monkey-tester",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "description": "Auto route scanning visual runner dashboard.",
   "main": "index.js",
   "type": "module",
