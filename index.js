@@ -1,5 +1,7 @@
-'use strict';
+import { endtesterExpress } from './monkey.js';
 
-const { endtesterExpress } = require('./monkey.js');
+// Named export for: import { endtesterExpress } from '@aimeloic/monkey-tester'
+export { endtesterExpress };
 
-module.exports = { endtesterExpress };
+// Default export for: import monkeyTester from '@aimeloic/monkey-tester'
+export default { endtesterExpress };

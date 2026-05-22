@@ -183,15 +183,14 @@ function getHtmlTemplate(endpoints) {
 <div id="toast"></div>
 
 <script>
-  const ENDPOINTS = JSON.parse(atob(document.getElementById('__monkey_data__').getAttribute('data-payload')));
-  let currentKey = null;
+  var ENDPOINTS = JSON.parse(atob(document.getElementById('__monkey_data__').getAttribute('data-payload')));
+  var currentKey = null;
 
   document.getElementById('base-url').value = window.location.origin;
 
-  // ── Sidebar ────────────────────────────────────────────────────────────────
   function buildSidebar() {
-    const sidebar = document.getElementById('sidebar-nav');
-    const keys = Object.keys(ENDPOINTS);
+    var sidebar = document.getElementById('sidebar-nav');
+    var keys = Object.keys(ENDPOINTS);
 
     if (keys.length === 0) {
       sidebar.innerHTML += '<div style="padding:18px;color:var(--text-dim);font-size:12px">No endpoints discovered.</div>';
@@ -199,16 +198,16 @@ function getHtmlTemplate(endpoints) {
       return;
     }
 
-    keys.forEach((key, i) => {
-      const ep = ENDPOINTS[key];
-      const item = document.createElement('div');
+    keys.forEach(function(key, i) {
+      var ep = ENDPOINTS[key];
+      var item = document.createElement('div');
       item.className = 'nav-item' + (i === 0 ? ' active' : '');
       item.setAttribute('data-key', key);
       item.innerHTML =
         '<span class="method-badge ' + ep.method + '">' + ep.method + '</span>' +
         '<span class="nav-label">' + ep.path + '</span>';
-      item.addEventListener('click', () => {
-        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      item.addEventListener('click', function() {
+        document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
         item.classList.add('active');
         clearResponse();
         renderPanel(key);
@@ -219,20 +218,18 @@ function getHtmlTemplate(endpoints) {
     renderPanel(keys[0]);
   }
 
-  // ── Panel ──────────────────────────────────────────────────────────────────
   function renderPanel(key) {
     currentKey = key;
-    const ep = ENDPOINTS[key];
-    const main = document.getElementById('main-panel');
+    var ep = ENDPOINTS[key];
+    var main = document.getElementById('main-panel');
     if (!ep) return;
 
-    let html =
+    var html =
       '<div class="endpoint-title">' + ep.title + '</div>' +
       '<div class="endpoint-path"><span class="method-badge ' + ep.method + '">' + ep.method + '</span>' +
       '<span>' + ep.path + '</span></div>' +
       '<div class="endpoint-desc">' + ep.desc + '</div>';
 
-    // Path params
     if (ep.params && ep.params.length) {
       html += '<div class="form-section"><div class="form-section-title">Path Parameters</div>';
       ep.params.forEach(function(p) {
@@ -245,7 +242,6 @@ function getHtmlTemplate(endpoints) {
       html += '</div>';
     }
 
-    // Body fields
     if (ep.fields && ep.fields.length) {
       html += '<div class="form-section"><div class="form-section-title">Request Body</div>';
       ep.fields.forEach(function(f) {
@@ -274,57 +270,62 @@ function getHtmlTemplate(endpoints) {
       '<p>Make sure <code>app.use(endtesterExpress())</code> is added after your routes.</p></div>';
   }
 
-  // ── Request ────────────────────────────────────────────────────────────────
   async function sendRequest() {
-    const ep = ENDPOINTS[currentKey];
-    let path = ep.path;
+    var ep = ENDPOINTS[currentKey];
+    var path = ep.path;
 
     if (ep.params && ep.params.length) {
-      for (const p of ep.params) {
-        const val = (document.getElementById('param-' + p.name) || {}).value || '';
+      for (var i = 0; i < ep.params.length; i++) {
+        var p = ep.params[i];
+        var val = (document.getElementById('param-' + p.name) || {}).value || '';
         if (!val.trim()) { showToast('⚠ Path param "' + p.label + '" is required'); return; }
         path = path.replace(':' + p.name, encodeURIComponent(val.trim()));
       }
     }
 
-    const baseUrl = document.getElementById('base-url').value.replace(/\/+$/, '');
-    const url = baseUrl + path;
-    const headers = { 'Content-Type': 'application/json' };
-    const jwt = document.getElementById('jwt-input').value.trim();
+    var baseUrl = document.getElementById('base-url').value.replace(/\/+$/, '');
+    var url = baseUrl + path;
+    var headers = { 'Content-Type': 'application/json' };
+    var jwt = document.getElementById('jwt-input').value.trim();
     if (jwt) headers['Authorization'] = 'Bearer ' + jwt;
 
-    let body = undefined;
+    var body = undefined;
     if (['POST', 'PUT', 'PATCH'].includes(ep.method) && ep.fields && ep.fields.length) {
-      const payload = {};
+      var payload = {};
+      var hasData = false;
+      
       ep.fields.forEach(function(f) {
-        const el = document.getElementById('field-' + f.name);
+        var el = document.getElementById('field-' + f.name);
         if (!el) return;
-        let v = el.value.trim();
-        if (f.type === 'number' && v !== '') v = Number(v);
+        var v = el.value.trim();
+        if (v === '') return;
+        
+        if (f.type === 'number') v = Number(v);
         payload[f.name] = v;
+        hasData = true;
       });
-      body = JSON.stringify(payload);
+      
+      if (hasData) body = JSON.stringify(payload);
     }
 
     setResponse(null, 'loading');
-    const t0 = Date.now();
+    var t0 = Date.now();
 
     try {
-      const res = await fetch(url, { method: ep.method, headers, body });
-      const ms = Date.now() - t0;
-      const text = await res.text();
-      let data;
-      try { data = JSON.parse(text); } catch { data = text; }
+      var res = await fetch(url, { method: ep.method, headers: headers, body: body });
+      var ms = Date.now() - t0;
+      var text = await res.text();
+      var data;
+      try { data = JSON.parse(text); } catch(e) { data = text; }
       setResponse(data, res.ok ? 'ok' : 'err', res.status, ms);
     } catch (err) {
       setResponse({ error: err.message }, 'err', 'FAIL', 0);
     }
   }
 
-  // ── Response ───────────────────────────────────────────────────────────────
   function setResponse(data, state, status, ms) {
-    const badge = document.getElementById('status-badge');
-    const body  = document.getElementById('response-body');
+    var badge = document.getElementById('status-badge');
+    var body  = document.getElementById('response-body');
 
     if (state === 'loading') {
       badge.className = 'status-badge status-idle';
@@ -337,14 +338,14 @@ function getHtmlTemplate(endpoints) {
     badge.className = 'status-badge ' + (state === 'ok' ? 'status-ok' : 'status-err');
     badge.textContent = status + ' · ' + ms + 'ms';
     body.className = 'response-body';
-    const str = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    var str = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
     body.innerHTML = '<pre class="json-render-block">' + highlight(str) + '</pre>';
   }
 
   function clearResponse() {
     document.getElementById('status-badge').className = 'status-badge status-idle';
     document.getElementById('status-badge').textContent = '—';
-    const body = document.getElementById('response-body');
+    var body = document.getElementById('response-body');
     body.className = 'response-body empty';
     body.textContent = 'Execute a request to see the response';
   }
@@ -363,10 +364,10 @@ function getHtmlTemplate(endpoints) {
   }
 
   function showToast(msg) {
-    const t = document.getElementById('toast');
+    var t = document.getElementById('toast');
     t.textContent = msg;
     t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2500);
+    setTimeout(function() { t.classList.remove('show'); }, 2500);
   }
 
   buildSidebar();
@@ -375,4 +376,4 @@ function getHtmlTemplate(endpoints) {
 </html>`;
 }
 
-module.exports = { getHtmlTemplate };
+export { getHtmlTemplate };
